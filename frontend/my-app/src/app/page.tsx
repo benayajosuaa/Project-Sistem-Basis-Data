@@ -100,7 +100,7 @@ export default function Home() {
           >
             {loading ? (
               <p className="animate-pulse text-gray-600">
-                ⏳ Sedang mencari jawaban dari database kami...
+                ⏳ Sedang mencari jawaban dari database kami ...
               </p>
             ) : error ? (
               <p className="text-red-600">{error}</p>
@@ -185,7 +185,9 @@ export default function Home() {
               </AnimatePresence>
             ) : (
               <p className="text-gray-400">
-                Ketik pertanyaan pada kolom di bawah untuk mulai mencari resep dari database kami...
+                Ketik pertanyaan pada kolom di bawah untuk mulai mencari resep dari database kami... <br/>
+                sebisa mungkin akan dijawab selagi berhubungan dengan data yang dipunya ☝️🤓 <br/><br/>
+                selamat mencoba ~
               </p>
             )}
           </div>
@@ -207,7 +209,7 @@ export default function Home() {
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={
-              loading ? "Sedang mencari jawaban..." : "Apa yang mau anda cari hari ini?"
+              loading ? "Sedang mencari jawaban..." : "Apa yang mau anda cari hari ini ?"
             }
             disabled={loading}
             className={`top w-full bg-white p-3 border border-slate-400 rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all overflow-y-auto ${
