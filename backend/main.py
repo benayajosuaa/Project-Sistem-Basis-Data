@@ -4,6 +4,13 @@ from pydantic import BaseModel
 from rag_core import query_recipes
 import uvicorn
 
+# Nama Kelompok
+# Benaya
+# Darren
+# Fronli
+# Michael
+
+
 # Inisialisasi FastAPI
 app = FastAPI(title="RAG Resep API", version="1.0.0")
 
