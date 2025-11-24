@@ -6,7 +6,7 @@ const montserratFont = Montserrat({
     subsets :["latin"],
     weight : "400",
 })
-
+// test github
 export default function Navbar (){
     return (
         <div className={`text-black bg-transparent ${montserratFont.className}`}>
