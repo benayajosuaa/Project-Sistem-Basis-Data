@@ -1,7 +1,6 @@
 fastapi
-uvicorn[standard]
-qdrant-client
+uvicorn
+qdrant-client==1.16.0
 sentence-transformers
-google-generativeai
 python-dotenv
 numpy

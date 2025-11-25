@@ -16,7 +16,7 @@ model = SentenceTransformer(EMBED_MODEL)
 
 client = QdrantClient(url=QDRANT_URL)
 
-DATA_PATH = Path("data/recipes_final.txt")
+DATA_PATH = Path("/app/data/final_recipes_for_rag.txt")
 
 
 def create_collection():
@@ -38,24 +38,35 @@ def ingest():
 
     points = []
     for line in lines:
-        line = line.strip()
-        if not line:
-            continue
+            line = line.strip()
+            if not line:
+                continue
 
-        recipe_name, text = line.split(":", 1)
+            if ":" not in line:
+                print("SKIPPING BROKEN LINE:", line)
+                continue
 
-        vector = model.encode(text).tolist()
+            recipe_name, text = line.split(":", 1)
 
-        points.append(
-            PointStruct(
-                id=str(uuid.uuid4()),
-                vector=vector,
-                payload={
-                    "recipe_name": recipe_name.strip(),
-                    "text": text.strip()
-                }
+            recipe_name = recipe_name.strip()
+            text = text.strip()
+
+            if not text:
+                print("SKIP EMPTY TEXT:", line)
+                continue
+
+            vector = model.encode(text).tolist()
+
+            points.append(
+                PointStruct(
+                    id=str(uuid.uuid4()),
+                    vector=vector,
+                    payload={
+                        "recipe_name": recipe_name,
+                        "text": text
+                    }
+                )
             )
-        )
 
     client.upsert(collection_name=COLLECTION_NAME, points=points)
     print(f"Ingest selesai: {len(points)} data dimasukkan.")
