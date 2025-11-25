@@ -1,3 +1,4 @@
+# === main.py ===
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -6,7 +7,6 @@ import asyncio
 
 app = FastAPI()
 
-# CORS: allow frontend dev origin(s)
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -26,45 +26,27 @@ class AskPayload(BaseModel):
 
 @app.post("/ask")
 async def ask(payload: AskPayload):
-    try:
-        # Jalankan search di thread pool
-        result = await asyncio.to_thread(
-            search_recipes,
-            payload.question,
-            payload.top_k
-        )
+    # Panggil search_recipes (backend + AI)
+    result = await asyncio.to_thread(
+        search_recipes,
+        payload.question,
+        payload.top_k
+    )
 
-        # Kalau function search balikin None atau list kosong
-        if not result:
-            return {
-                "answer": "Tidak ada jawaban ditemukan.",
-                "results": []
-            }
+    if not result:
+        return {"answer": "Maaf, resep tidak ditemukan.", "results": []}
 
-        first = result[0]
+    first = result[0]
 
-        # Kalau result berisi error dict seperti {"error": "..."}
-        if isinstance(first, dict) and "error" in first:
-            return {
-                "answer": "Terjadi error saat mencari jawaban.",
-                "results": result
-            }
+    # Cek error dari rag_core
+    if "error" in first:
+         return {"answer": f"Terjadi kesalahan: {first['error']}", "results": []}
 
-        # Normal case: item punya payload text
-        if isinstance(first, dict) and "text" in first:
-            answer = first["text"]
-        else:
-            # fallback kalau format item aneh
-            answer = str(first)
-
-        return {
-            "answer": answer,
-            "results": result
-        }
-
-    except Exception as e:
-        # error handling global
-        return {"error": str(e)}
+    # Hasil sukses
+    return {
+        "answer": first["text"], # Ini teks Markdown dari Gemini
+        "results": result
+    }
 
 @app.get("/health")
 async def health():

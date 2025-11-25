@@ -1,13 +1,27 @@
+# === rag_core.py ===
 from qdrant_client import QdrantClient
 from sentence_transformers import SentenceTransformer
+import google.generativeai as genai
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
+# --- PERUBAHAN DI SINI (KITA PAKSA LOCALHOST) ---
+# Jangan pakai os.getenv dulu biar pasti jalan
+QDRANT_URL = "http://localhost:6333" 
+# -----------------------------------------------
+
 COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "recipes")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# Setup Gemini
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    model_gemini = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    model_gemini = None
 
 _model = None
 _client = None
@@ -15,75 +29,84 @@ _client = None
 def get_model():
     global _model
     if _model is None:
-        print("Loading embedding model... (this may download model files if not cached)")
-        try:
-            _model = SentenceTransformer(EMBED_MODEL)
-        except Exception as e:
-            print("ERROR loading embedding model:", e)
-            raise
+        print("Loading embedding model...")
+        _model = SentenceTransformer(EMBED_MODEL)
     return _model
 
 def get_client():
     global _client
     if _client is None:
-        print("Connecting to Qdrant at", QDRANT_URL)
-        # Try a few times in case Qdrant is still starting or DNS transient error
-        import time
-        last_exc = None
-        for attempt in range(1, 6):
-            try:
-                _client = QdrantClient(url=QDRANT_URL)
-                # quick check to ensure connection works
-                _client.get_collections()
-                print("Connected to Qdrant (attempt", attempt, ")")
-                last_exc = None
-                break
-            except Exception as e:
-                print(f"Attempt {attempt} failed to connect to Qdrant:", e)
-                last_exc = e
-                time.sleep(attempt)  # backoff
-        if last_exc is not None:
-            print("Failed to connect to Qdrant after retries:", last_exc)
-            raise last_exc
+        # Debugging Print: Biar kita lihat dia connect kemana
+        print(f"👉 MENCOBA CONNECT KE: {QDRANT_URL}") 
+        
+        try:
+            _client = QdrantClient(url=QDRANT_URL)
+            # Cek koneksi beneran nyambung atau enggak
+            _client.get_collections() 
+            print("✅ BERHASIL CONNECT KE QDRANT!")
+        except Exception as e:
+            print(f"❌ GAGAL CONNECT: {e}")
+            raise e
+            
     return _client
 
 def embed_text(text: str):
-    model = get_model()
-    return model.encode(text).tolist()
+    return get_model().encode(text).tolist()
+
+def format_with_gemini(raw_text: str, recipe_name: str):
+    if not model_gemini:
+        return raw_text
+
+    prompt = f"""
+    Kamu adalah asisten koki. Format ulang resep ini ke MARKDOWN yang rapi.
+    
+    Judul: {recipe_name}
+    Konten: "{raw_text}"
+
+    Aturan:
+    1. Buat bagian "### 🛒 Bahan-bahan" (bullet points).
+    2. Buat bagian "### 🍳 Cara Memasak" (nomor 1, 2, 3...).
+    3. JANGAN mengubah angka takaran.
+    4. Langsung ke konten.
+    """
+    try:
+        response = model_gemini.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        print(f"Gemini Error: {e}")
+        return raw_text
 
 def search_recipes(query: str, top_k: int = 3):
     try:
-        print("DEBUG: starting search with query:", query)
-        query_vector = embed_text(query)
-        print("DEBUG: embedding OK", len(query_vector))
-        
+        print("DEBUG: searching:", query)
+        query_vec = embed_text(query)
+
         client = get_client()
-        print("DEBUG: client OK")
-        
-        # Gunakan query_points dengan vector yang sudah di-embed
         result = client.query_points(
             collection_name=COLLECTION_NAME,
-            query=query_vector,
-            limit=top_k
+            query=query_vec,
+            limit=top_k,
         )
-        print("DEBUG: search done")
-        
+
         hits = []
-        # result adalah QueryResponse dengan field 'points'
-        for point in result.points:
+        for i, point in enumerate(result.points):
+            raw = point.payload.get("text", "").strip()
+            recipe_name = point.payload.get("recipe_name", "Resep")
+
+            if i == 0:
+                final_text = format_with_gemini(raw, recipe_name)
+            else:
+                final_text = raw 
+
             hits.append({
                 "score": point.score,
-                "text": point.payload.get("text", ""),
-                "recipe_name": point.payload.get("recipe_name", "Untitled"),
+                "text": final_text,
+                "recipe_name": recipe_name,
             })
-        print("DEBUG: hits OK")
+
         return hits
-        
+
     except Exception as e:
         import traceback
-        tb = traceback.format_exc()
-        print("ERROR in search:", e)
-        print(tb)
-        # Return structured error with type and message (so frontend can show it)
-        err_msg = f"{type(e).__name__}: {str(e)}"
-        return [{"error": err_msg}]
+        print("ERROR:", e)
+        return [{"error": f"{type(e).__name__}: {e}"}]
