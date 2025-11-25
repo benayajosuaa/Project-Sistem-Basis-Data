@@ -17,6 +17,8 @@ export default function Home() {
   const [response, setResponse] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastRaw, setLastRaw] = useState<string | null>(null);
+  const [debugOpen, setDebugOpen] = useState(false);
 
   const outputRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -66,10 +68,24 @@ export default function Home() {
       if (!res.ok) throw new Error("Gagal mengambil data dari server");
 
       const data = await res.json();
-      setResponse(data);
+      // Simpan raw response untuk debugging
+      setLastRaw(JSON.stringify(data, null, 2));
+
+      // Jika backend mengembalikan error di results
+      if (Array.isArray(data.results) && data.results.length > 0 && data.results[0]?.error) {
+        setError(data.results[0].error || "Terjadi error di server");
+        setResponse(null);
+      } else {
+        setResponse(data);
+      }
     } catch (err: any) {
       console.error(err);
-      setError("❌ Terjadi kesalahan saat mengambil data dari server.");
+      setError(err?.message || "❌ Terjadi kesalahan saat mengambil data dari server.");
+      try {
+        setLastRaw(JSON.stringify(err, Object.getOwnPropertyNames(err), 2));
+      } catch (_) {
+        setLastRaw(String(err));
+      }
     } finally {
       setLoading(false);
       setValue("");
@@ -169,11 +185,17 @@ export default function Home() {
                     <div className="space-y-3 pl-2">
                       {response.results.map((r: any, i: number) => (
                         <div key={i} className="text-gray-700">
-                          {r.recipe_name && (
-                            <p className="font-semibold text-blue-700">
-                              {r.recipe_name}
-                            </p>
-                          )}
+                          <div className="flex items-baseline justify-between">
+                            {r.recipe_name ? (
+                              <p className="font-semibold text-blue-700">{r.recipe_name}</p>
+                            ) : (
+                              <p className="font-semibold text-gray-800">Hasil</p>
+                            )}
+                            {typeof r.score === "number" && (
+                              <span className="text-xs text-gray-500">score: {r.score.toFixed(3)}</span>
+                            )}
+                          </div>
+
                           <p className="text-sm text-gray-600 whitespace-pre-line">
                             {r.text}
                           </p>
@@ -225,6 +247,33 @@ export default function Home() {
           </p>
         </div>
       </div>
+      {/* Debug panel (development only) */}
+      {process.env.NEXT_PUBLIC_DEBUG === "1" && (
+        <div className="fixed right-4 bottom-32 z-50 w-96 max-h-96 overflow-auto bg-white border p-3 rounded shadow">
+          <div className="flex justify-between items-center mb-2">
+            <strong className="text-sm">DEBUG</strong>
+            <div className="space-x-2">
+              <button
+                onClick={() => {
+                  setDebugOpen((s) => !s);
+                }}
+                className="text-xs text-blue-600"
+              >
+                Toggle
+              </button>
+              <button
+                onClick={() => setLastRaw(null)}
+                className="text-xs text-red-600"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+          {debugOpen && (
+            <pre className="text-xs whitespace-pre-wrap">{lastRaw || "(no data)"}</pre>
+          )}
+        </div>
+      )}
     </div>
   );
 }
