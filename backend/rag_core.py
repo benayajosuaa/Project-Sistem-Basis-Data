@@ -1,8 +1,8 @@
-# rag_core.py
 from qdrant_client import QdrantClient
 from sentence_transformers import SentenceTransformer
 import os
 from dotenv import load_dotenv
+import re
 
 load_dotenv()
 
@@ -16,7 +16,6 @@ except Exception:
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "recipes")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
-# accept either GOOGLE_API_KEY or GEMINI_API_KEY env var
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
 
 # Setup Gemini (if available)
@@ -24,8 +23,6 @@ model_gemini = None
 if genai is not None and GOOGLE_API_KEY:
     try:
         genai.configure(api_key=GOOGLE_API_KEY)
-        # try the most stable option; library/runtime may change available model names
-        # we'll try a small list later when calling generate_content if needed
         model_gemini = genai.GenerativeModel("gemini-pro")
         print("👉 Gemini client configured (requested model: gemini-pro)")
     except Exception as e:
@@ -54,7 +51,6 @@ def get_client():
     if _client is None:
         print(f"👉 MENCOBA CONNECT KE: {QDRANT_URL}")
         _client = QdrantClient(url=QDRANT_URL)
-        # check existence lazily (may raise if DB down)
         try:
             _client.get_collections()
             print("✅ BERHASIL CONNECT KE QDRANT!")
@@ -66,9 +62,7 @@ def embed_text(text: str):
     return get_model().encode(text).tolist()
 
 
-# --- Local heuristic formatter (fallback when LLM fails) ---
-import re
-
+# --- Local heuristic formatter (IMPROVED) ---
 _MEASURE_RE = re.compile(r'\b(cup|cups|tbsp|tsp|tablespoon|tablespoons|teaspoon|gram|g|kg|ml|l|ounce|oz|pound|slices?)\b', re.I)
 _INSTR_KEYWORDS = [
     "preheat", "mix", "combine", "stir", "bake", "cook",
@@ -77,142 +71,280 @@ _INSTR_KEYWORDS = [
 ]
 
 def local_format_to_markdown(raw_text: str, recipe_name: str) -> str:
+    print(f"🔧 LOCAL FORMATTER - Processing: {recipe_name}")
+    
     text = raw_text.strip()
-    # split into sentences
-    sentences = re.split(r'(?<=[\.\?\!])\s+', text)
-    # try to collect ingredients: sentences that contain measure tokens or numbers
+    
+    # Special handling for structured text like Apple Pie Filling
+    if any(keyword in text for keyword in ["Bahan-bahan", "Cara Memasak", "Informasi Nutrisi"]):
+        print("🔧 LOCAL FORMATTER - Detected structured text, using section-based parsing")
+        return parse_structured_text(text, recipe_name)
+    
+    # Fallback to sentence-based parsing for unstructured text
+    return parse_unstructured_text(text, recipe_name)
+
+def parse_structured_text(text: str, recipe_name: str) -> str:
+    """Parse text that already has sections like Bahan-bahan, Cara Memasak, etc."""
+    lines = text.split('\n')
     ingredients = []
     steps = []
-    remainder = []
+    nutrition = []
+    
+    current_section = None
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Detect section headers
+        if "Bahan-bahan" in line:
+            current_section = "ingredients"
+            continue
+        elif "Cara Memasak" in line:
+            current_section = "steps"
+            continue
+        elif "Informasi Nutrisi" in line:
+            current_section = "nutrition"
+            continue
+            
+        # Skip metadata lines in ingredients section
+        if current_section == "ingredients" and "Cool for" in line:
+            continue
+            
+        # Process content based on current section
+        if current_section == "ingredients" and line:
+            ingredients.append(line)
+        elif current_section == "steps" and line:
+            # Split long text into individual steps
+            sentences = re.split(r'(?<=[.!?])\s+', line)
+            for sentence in sentences:
+                if sentence.strip() and len(sentence.strip()) > 10:  # Only include substantial sentences
+                    steps.append(sentence.strip())
+        elif current_section == "nutrition" and line:
+            nutrition.append(line)
+    
+    # Build markdown
+    md = [f"## {recipe_name}\n"]
+    
+    # Ingredients section
+    md.append("### 🛒 Bahan-bahan")
+    if ingredients:
+        for ing in ingredients:
+            if ing.strip() and ing not in ["Bahan-bahan", "Cara Memasak", "Informasi Nutrisi"]:
+                md.append(f"- {ing.strip()}")
+    else:
+        md.append("- (Bahan tidak terdeteksi)")
+    
+    # Steps section  
+    md.append("\n### 🍳 Cara Memasak")
+    if steps:
+        for i, step in enumerate(steps, 1):
+            md.append(f"{i}. {step}")
+    else:
+        md.append("1. (Langkah memasak tidak terdeteksi)")
+    
+    # Nutrition section
+    md.append("\n### ℹ️ Informasi Nutrisi")
+    if nutrition:
+        for nut in nutrition:
+            if nut.strip():
+                md.append(f"- {nut.strip()}")
+    else:
+        # Try to extract nutrition info from text
+        nutrition_info = extract_nutrition_info(text)
+        if nutrition_info:
+            for info in nutrition_info:
+                md.append(f"- {info}")
+        else:
+            md.append("- (Informasi nutrisi tidak tersedia)")
+    
+    result = "\n".join(md)
+    print(f"🔧 LOCAL FORMATTER - Structured result:\n{result}")
+    return result
 
+def parse_unstructured_text(text: str, recipe_name: str) -> str:
+    """Parse unstructured text using sentence analysis."""
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    ingredients, steps, remainder = [], [], []
+    
     for s in sentences:
         s_strip = s.strip()
-        low = s_strip.lower()
-        if not s_strip:
+        if not s_strip: 
             continue
-        # if contains measurement tokens OR starts with a digit -> ingredient candidate
-        if _MEASURE_RE.search(s_strip) or re.match(r'^\d+(\.| )', s_strip):
+            
+        # Check if it's likely an ingredient
+        if (_MEASURE_RE.search(s_strip) or 
+            re.match(r'^\d+(\.\d*)?\s*', s_strip) or
+            any(word in s_strip.lower() for word in ['cup', 'tbsp', 'tsp', 'gram', 'kg', 'ml'])):
             ingredients.append(s_strip.rstrip('.'))
-        # if looks like instruction by keyword -> step
-        elif any(k in low for k in _INSTR_KEYWORDS) or len(s_strip.split()) > 10:
+        # Check if it's likely an instruction
+        elif any(keyword in s_strip.lower() for keyword in _INSTR_KEYWORDS):
             steps.append(s_strip.rstrip('.'))
         else:
             remainder.append(s_strip.rstrip('.'))
-
-    # fallback: if no ingredients found, try to parse from comma separated first sentence
+    
+    # If no ingredients detected but we have remainder, use first few lines as ingredients
     if not ingredients and remainder:
-        first = remainder[0]
-        parts = [p.strip() for p in re.split(r',|\band\b', first) if p.strip()]
-        # keep only short items
-        cand = [p for p in parts if 1 < len(p.split()) <= 6]
-        if cand:
-            ingredients.extend(cand)
-            remainder = remainder[1:]
-
-    # build markdown
+        # Take first 2-4 items that look like ingredients
+        potential_ingredients = []
+        for item in remainder[:6]:
+            if len(item.split()) <= 8:  # Reasonable length for ingredient
+                potential_ingredients.append(item)
+        if potential_ingredients:
+            ingredients.extend(potential_ingredients)
+            remainder = remainder[len(potential_ingredients):]
+    
+    # Build markdown
     md = [f"## {recipe_name}\n"]
+    
     md.append("### 🛒 Bahan-bahan")
     if ingredients:
         for ing in ingredients:
             md.append(f"- {ing}")
     else:
         md.append("- (Tidak ada daftar bahan terdeteksi dari teks)")
-
+    
     md.append("\n### 🍳 Cara Memasak")
     if steps:
-        for i, st in enumerate(steps, 1):
-            md.append(f"{i}. {st}")
+        for i, step in enumerate(steps, 1):
+            md.append(f"{i}. {step}")
+    elif remainder:
+        for i, step in enumerate(remainder, 1):
+            md.append(f"{i}. {step}")
     else:
-        # fallback: chunk remainder into steps by reasonable lengths
-        if remainder:
-            for i, st in enumerate(remainder, 1):
-                md.append(f"{i}. {st}")
-        else:
-            md.append("1. (Instruksi tidak tersedia)")
-
-    # optional info
-    md.append("\n### ℹ️ Informasi Tambahan")
-    # try extract nutrition-like pattern
-    nut = re.findall(r'(Total Fat|Saturated Fat|Cholesterol|Sodium|Total Carbohydrate|Dietary Fiber|Total Sugars|Protein|Vitamin|Calcium|Iron|Potassium)[^,;\n]*', raw_text, re.I)
-    if nut:
-        for n in nut:
-            md.append(f"- {n.strip()}")
+        md.append("1. (Instruksi tidak tersedia)")
+    
+    md.append("\n### ℹ️ Informasi Nutrisi")
+    nutrition_info = extract_nutrition_info(text)
+    if nutrition_info:
+        for info in nutrition_info:
+            md.append(f"- {info}")
     else:
-        md.append("- (Tidak ada informasi tambahan terdeteksi)")
+        md.append("- (Tidak ada informasi nutrisi terdeteksi)")
+    
+    result = "\n".join(md)
+    print(f"🔧 LOCAL FORMATTER - Unstructured result:\n{result}")
+    return result
 
-    return "\n".join(md)
+def extract_nutrition_info(text: str) -> list:
+    """Extract nutrition information from text."""
+    nutrition_patterns = [
+        r'Total Fat[^,\n]*',
+        r'Saturated Fat[^,\n]*', 
+        r'Cholesterol[^,\n]*',
+        r'Sodium[^,\n]*',
+        r'Total Carbohydrate[^,\n]*',
+        r'Dietary Fiber[^,\n]*',
+        r'Total Sugars[^,\n]*',
+        r'Protein[^,\n]*',
+        r'Vitamin[^,\n]*',
+        r'Calcium[^,\n]*',
+        r'Iron[^,\n]*',
+        r'Potassium[^,\n]*'
+    ]
+    
+    found_nutrition = []
+    for pattern in nutrition_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        found_nutrition.extend(matches)
+    
+    return found_nutrition
 
 
-# --- Format with Gemini (if available) ---
+# --- Format with Gemini (IMPROVED) ---
 def format_with_gemini(raw_text: str, recipe_name: str) -> str:
     if not model_gemini:
         print("ℹ️ Gemini not configured — using local formatter.")
         return local_format_to_markdown(raw_text, recipe_name)
 
-    # prepare strict prompt
-    prompt = f"""
-Anda adalah asisten koki profesional.
-Format ulang teks resep berikut menjadi **Markdown rapi** persis sesuai TEMPLATE:
+    print(f"🔍 GEMINI - Processing: {recipe_name}")
+    
+    # Clean text more carefully
+    cleaned_text = raw_text.strip()
+    if cleaned_text.lower().startswith(recipe_name.lower()):
+        cleaned_text = cleaned_text[len(recipe_name):].lstrip(".:- ").strip()
+        print(f"🧹 GEMINI - Cleaned redundant title")
 
-## {recipe_name}
+    prompt = f"""
+ANDA ADALAH AHLI RESEP PROFESIONAL. FORMAT TEKS BERIKUT MENJADI MARKDOWN YANG RAPI.
+
+FORMAT YANG HARUS DIIKUTI:
+
+## [NAMA RESEP]
 
 ### 🛒 Bahan-bahan
-- (satu bahan per bullet)
+- [bahan 1]
+- [bahan 2]
 
-### 🍳 Cara Memasak
-1. (langkah pertama)
-2. (langkah kedua)
-...
+### 🍳 Cara Memasak  
+1. [langkah 1]
+2. [langkah 2]
 
-### ℹ️ Informasi Tambahan
-- (kalori/nutrisi jika ada)
+### ℹ️ Informasi Nutrisi
+- [info nutrisi 1]
+- [info nutrisi 2]
 
-ATURAN KERAS:
-- Output HARUS mengikuti template di atas.
-- Jangan membuat paragraf panjang.
-- Jangan menambah penjelasan apapun.
-- Jangan merangkum isi; hanya ubah struktur menjadi Markdown.
+ATURAN:
+1. JUDUL HARUS: ## {recipe_name}
+2. EKSTRAK semua bahan dan tempatkan di section Bahan-bahan
+3. EKSTRAK semua langkah memasak dan tempatkan di section Cara Memasak  
+4. EKSTRAK informasi nutrisi dan tempatkan di section Informasi Nutrisi
+5. GUNAKAN format markdown di atas dengan TEPAT
+6. JANGAN tambahkan konten lain selain format di atas
 
-=== TEKS ASLI ===
-{raw_text}
+TEKS RESEP UNTUK DIFORMAT:
 
-=== OUTPUT ===
+{cleaned_text}
+
+HASIL MARKDOWN:
 """
 
-    # try multiple model names/order if runtime complains
-    tried_models = []
-    for candidate_model in ["gemini-pro", "gemini-1.5", "gemini-1.5-flash", "gemini-1.0-pro"]:
+    tried_models = ["gemini-pro", "gemini-1.5-flash", "gemini-1.0-pro"]
+    for candidate_model in tried_models:
         try:
-            tried_models.append(candidate_model)
-            # re-init model object with candidate name (some SDKs require new object)
+            print(f"🔍 GEMINI - Trying model: {candidate_model}")
             gen_model = genai.GenerativeModel(candidate_model)
             resp = gen_model.generate_content(
                 prompt,
-                generation_config={"temperature": 0, "max_output_tokens": 2048}
+                generation_config={
+                    "temperature": 0.1,
+                    "max_output_tokens": 2048
+                }
             )
             text = (resp.text or "").strip()
-            if text:
-                # quick sanity check: did we get markers?
-                if ("###" in text) or ("- " in text) or ("1." in text):
-                    print(f"✅ Gemini formatted using model {candidate_model}")
-                    return text
-                else:
-                    # if response has no list markers, continue trying others
-                    print(f"⚠️ Gemini response from {candidate_model} lacks list markers; trying next model.")
-            else:
-                print(f"⚠️ Empty response from Gemini model {candidate_model}")
-        except Exception as e:
-            print(f"⚠️ Gemini candidate {candidate_model} failed: {e}")
 
-    # if we reach here, all LLM attempts failed -> use local fallback
-    print("❌ All Gemini attempts failed (tried models: " + ", ".join(tried_models) + "). Using local formatter.")
+            print(f"📝 GEMINI - Raw response from {candidate_model}:")
+            print("=" * 60)
+            print(text)
+            print("=" * 60)
+
+            # Validate response
+            is_valid = (
+                text and 
+                text.startswith(f"## {recipe_name}") and
+                "### 🛒 Bahan-bahan" in text and
+                "### 🍳 Cara Memasak" in text
+            )
+            
+            if is_valid:
+                print(f"✅ GEMINI - Success with {candidate_model}")
+                return text
+            else:
+                print(f"❌ GEMINI - Invalid format from {candidate_model}")
+                continue
+                
+        except Exception as e:
+            print(f"🚨 GEMINI - Error with {candidate_model}: {e}")
+
+    print("🔧 GEMINI - All models failed, falling back to local formatter")
     return local_format_to_markdown(raw_text, recipe_name)
 
 
 # --- SEARCH + OUTPUT ---
 def search_recipes(query: str, top_k: int = 3):
     try:
-        print("DEBUG: searching:", query)
+        print(f"🔍 SEARCH - Query: '{query}', top_k: {top_k}")
         vec = embed_text(query)
         client = get_client()
 
@@ -226,20 +358,25 @@ def search_recipes(query: str, top_k: int = 3):
         for i, point in enumerate(result.points):
             raw = point.payload.get("text", "").strip()
             recipe_name = point.payload.get("recipe_name", "Resep")
+            score = point.score
 
-            # only format top-1 with LLM/fallback
-            if i == 0:
-                formatted = format_with_gemini(raw, recipe_name)
+            print(f"📊 SEARCH - Result {i+1}: {recipe_name} (score: {score:.3f})")
+            
+            # Format the result
+            if i == 0:  # Only use Gemini for top result
+                formatted_text = format_with_gemini(raw, recipe_name)
             else:
-                formatted = raw
+                formatted_text = local_format_to_markdown(raw, recipe_name)
 
             hits.append({
-                "score": point.score,
-                "text": formatted,
+                "score": score,
+                "text": formatted_text,
                 "recipe_name": recipe_name,
             })
+
+        print(f"✅ SEARCH - Found {len(hits)} results")
         return hits
 
     except Exception as e:
-        print("ERROR in search_recipes:", e)
+        print(f"🚨 SEARCH - Error: {e}")
         return [{"error": f"{type(e).__name__}: {e}"}]

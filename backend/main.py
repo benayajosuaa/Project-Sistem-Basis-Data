@@ -1,4 +1,3 @@
-# === main.py ===
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -10,6 +9,8 @@ app = FastAPI()
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
 ]
 
 app.add_middleware(
@@ -26,28 +27,43 @@ class AskPayload(BaseModel):
 
 @app.post("/ask")
 async def ask(payload: AskPayload):
-    # Panggil search_recipes (backend + AI)
-    result = await asyncio.to_thread(
-        search_recipes,
-        payload.question,
-        payload.top_k
-    )
+    print(f"🎯 API - Received question: '{payload.question}'")
+    
+    try:
+        # Call search_recipes (backend + AI)
+        result = await asyncio.to_thread(
+            search_recipes,
+            payload.question,
+            payload.top_k
+        )
 
-    if not result:
-        return {"answer": "Maaf, resep tidak ditemukan.", "results": []}
+        if not result:
+            print("❌ API - No results found")
+            return {"answer": "Maaf, resep tidak ditemukan.", "results": []}
 
-    first = result[0]
+        first = result[0]
 
-    # Cek error dari rag_core
-    if "error" in first:
-         return {"answer": f"Terjadi kesalahan: {first['error']}", "results": []}
+        # Check error from rag_core
+        if "error" in first:
+            print(f"🚨 API - Error in result: {first['error']}")
+            return {"answer": f"Terjadi kesalahan: {first['error']}", "results": []}
 
-    # Hasil sukses
-    return {
-        "answer": first["text"], # Ini teks Markdown dari Gemini
-        "results": result
-    }
+        print(f"✅ API - Successfully processed, returning {len(result)} results")
+        
+        # Success response
+        return {
+            "answer": first["text"],  # This is Markdown text from Gemini/local
+            "results": result
+        }
+
+    except Exception as e:
+        print(f"🚨 API - Unexpected error: {e}")
+        return {"answer": f"Terjadi kesalahan sistem: {str(e)}", "results": []}
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "service": "recipe-search-api"}
+
+@app.get("/")
+async def root():
+    return {"message": "Recipe Search API is running!"}
