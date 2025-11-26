@@ -22,11 +22,81 @@ type ResultItem = {
   text?: string;
   recipe_name?: string;
   error?: string;
+  ingredients?: string[];
+  instructions?: string[];
 };
 
 type ApiResponse = {
   answer?: string;
   results?: ResultItem[];
+};
+
+/* -----------------------------
+   NORMALIZE & CLEAN MARKDOWN
+------------------------------ */
+const headingMap: Record<string, string> = {
+  "ingredients": "Bahan-bahan",
+  "ingredient": "Bahan-bahan",
+  "directions": "Cara Memasak",
+  "steps": "Cara Memasak",
+  "step": "Cara Memasak",
+  "nutrition facts": "Informasi Nutrisi",
+  "prep time": "Waktu Persiapan",
+  "cook time": "Waktu Memasak",
+  "servings": "Porsi",
+};
+
+const replaceEnglishHeadings = (text: string) => {
+  // ganti heading (awal baris) yang umum dengan padanan Bahasa Indonesia
+  return text.replace(/^(?:\s*)(Ingredients|Ingredient|Directions|Steps|Step|Nutrition Facts|Prep Time|Cook Time|Servings)\s*[:\-]*/gmi, (m, p1) => {
+    const key = p1.toLowerCase();
+    return (headingMap[key] ?? p1) + "\n\n";
+  });
+};
+
+const dedupeConsecutiveLines = (text: string) => {
+  const lines = text.split(/\r?\n/);
+  const out: string[] = [];
+  for (const ln of lines) {
+    const trimmed = ln.trim();
+    if (out.length === 0) {
+      out.push(trimmed);
+      continue;
+    }
+    if (trimmed === "" && out[out.length - 1] === "") {
+      // skip consecutive empty lines
+      continue;
+    }
+    if (trimmed !== "" && trimmed === out[out.length - 1]) {
+      // skip consecutive duplicate lines
+      continue;
+    }
+    out.push(trimmed);
+  }
+  return out.join("\n");
+};
+
+const dedupeRepeatedWordsInLine = (line: string) => {
+  // hapus pengulangan kata berurutan seperti "aduk aduk" => "aduk"
+  // juga menangani pengulangan umum (case-insensitive)
+  return line.replace(/\b([^\s.,;:!?-]+)(?:\s+\1\b)+/gi, "$1");
+};
+
+const cleanText = (raw?: string) => {
+  if (!raw) return "";
+  let s = raw.replace(/\\n/g, "\n").replace(/\r/g, "");
+  // normalisasi spasi
+  s = s.replace(/\t/g, " ").replace(/[ ]{2,}/g, " ");
+  // ganti heading bahasa Inggris ke Indo
+  s = replaceEnglishHeadings(s);
+  // proses tiap baris: hapus pengulangan kata ganda
+  s = s
+    .split(/\n/)
+    .map((ln) => dedupeRepeatedWordsInLine(ln))
+    .join("\n");
+  // hapus baris duplikat berturut-turut dan baris kosong berlebih
+  s = dedupeConsecutiveLines(s);
+  return s.trim();
 };
 
 export default function Home() {
@@ -63,15 +133,6 @@ export default function Home() {
   );
 
   /* -----------------------------
-     NORMALIZE MARKDOWN
-  ------------------------------ */
-  const normalizeMarkdown = (md?: string) => {
-    if (!md) return "";
-    // Memastikan baris baru dihormati
-    return md.replace(/\\n/g, "\n").trim();
-  };
-
-  /* -----------------------------
      RESULT CARD
   ------------------------------ */
   function ResultCard({ r }: { r: ResultItem }) {
@@ -86,6 +147,24 @@ export default function Home() {
       } catch {
         setCopied(false);
       }
+    };
+
+    function normalizeMarkdown(arg0: string): string {
+      throw new Error("Function not implemented.");
+    }
+
+    const renderStructured = () => {
+      if (r.ingredients && r.instructions) {
+        // Build Indonesian markdown
+        let md = `### 🛒 Bahan-bahan\n`;
+        for (const ing of r.ingredients) md += `- ${ing}\n`;
+        md += `\n### 🍳 Cara Memasak\n`;
+        for (let i = 0; i < r.instructions.length; i++) {
+          md += `${i + 1}. ${r.instructions[i]}\n`;
+        }
+        return <MarkdownRenderer content={md} />;
+      }
+      return <MarkdownRenderer content={normalizeMarkdown(r.text || '')} />;
     };
 
     return (
@@ -122,7 +201,7 @@ export default function Home() {
             className="mt-4 pt-4 border-t border-gray-100"
           >
             <div className="text-sm">
-              <MarkdownRenderer content={normalizeMarkdown(r.text || "")} />
+              {renderStructured()}
             </div>
           </motion.div>
         )}
@@ -164,16 +243,22 @@ export default function Home() {
 
       const data: ApiResponse = await res.json();
 
+      // Jika backend menandakan error pada hasil atau tidak ada results, beri pesan khusus Bahasa Indonesia
       if (data.results?.[0]?.error) {
-        setError(data.results[0].error);
+        setError("Maaf resep itu tidak ada di database kami, tapi kamu mau gk rekomen resep yang lain ?");
+        return;
+      }
+      if (!data.results || data.results.length === 0) {
+        setError("Maaf resep itu tidak ada di database kami, tapi kamu mau gk rekomen resep yang lain ?");
         return;
       }
 
       const safe: ApiResponse = {
-        answer: normalizeMarkdown(data.answer),
+        answer: cleanText(data.answer),
         results: data.results?.map((r) => ({
           ...r,
-          text: normalizeMarkdown(r.text),
+          text: cleanText(r.text),
+          recipe_name: r.recipe_name || "Tanpa nama",
         })),
       };
 
