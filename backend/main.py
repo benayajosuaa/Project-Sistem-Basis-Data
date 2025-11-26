@@ -60,3 +60,24 @@ async def ask(payload: AskPayload):
     except Exception as e:
         print(f"🚨 ERROR API: {e}")
         return {"answer": f"Error: {e}", "results": []}
+
+# Compatibility endpoint that returns a plain list of hits
+# Useful for CLI tooling like `jq -r '.[0].text'`
+@app.post("/ask_raw")
+async def ask_raw(payload: AskPayload):
+    q = payload.question.strip()
+    try:
+        results = await asyncio.to_thread(search_recipes, q, payload.top_k)
+        # Always return a list; if no results, return empty list
+        if not isinstance(results, list):
+            # Normalize unexpected shapes to a list
+            results = [results] if results else []
+        return results
+    except Exception as e:
+        # On error, return a single-item list describing the error to keep shape stable
+        return [{
+            "recipe_name": "Error",
+            "text": f"Error: {e}",
+            "score": 0.0,
+            "error": str(e)
+        }]

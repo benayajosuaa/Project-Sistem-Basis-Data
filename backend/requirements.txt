@@ -5,3 +5,6 @@ sentence-transformers
 python-dotenv
 numpy
 google-generativeai
+
+# Optional improvements for ingredient extraction
+spacy
