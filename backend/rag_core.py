@@ -1,4 +1,4 @@
-# === rag_core.py (FINAL & VERIFIED) ===
+# === rag_core.py (SMART LANGUAGE & FORMATTING) ===
 from qdrant_client import QdrantClient
 from sentence_transformers import SentenceTransformer
 import os
@@ -19,10 +19,8 @@ genai_available = False
 try:
     import google.generativeai as genai
     
-    # Validasi versi library secara runtime
     if not hasattr(genai, 'configure'):
         print("⚠️  Versi google-generativeai usang. AI dimatikan.")
-        print("    -> Solusi: pip install -U google-generativeai")
     elif GOOGLE_API_KEY:
         genai.configure(api_key=GOOGLE_API_KEY)
         genai_available = True
@@ -50,8 +48,6 @@ def get_model():
 def get_client():
     global _client
     if _client is None:
-        # print(f"👉 Connecting to Qdrant: {QDRANT_URL}")
-        # prefer_grpc=False wajib
         _client = QdrantClient(url=QDRANT_URL, prefer_grpc=False)
     return _client
 
@@ -60,26 +56,28 @@ def embed_text(text: str):
 
 
 # ==========================================
-#  LOCAL FORMATTER (Fallback)
+#  LOCAL FORMATTER (Fallback jika AI mati)
 # ==========================================
 _MEASURE_RE = re.compile(r'\b(cup|cups|tbsp|tsp|gram|g|kg|ml|l|oz|siung|buah|lembar|ikat|batang|sendok)\b', re.I)
 _INSTR_KEYWORDS = [
     "panaskan", "campur", "aduk", "masak", "goreng", "rebus", "tumis",
-    "bakar", "potong", "iris", "haluskan", "sajikan", "mix", "cook", "bake"
+    "bakar", "potong", "iris", "haluskan", "sajikan", "mix", "cook", "bake", "preheat", "whisk"
 ]
 
 def local_format_to_markdown(raw_text: str, recipe_name: str) -> str:
     print(f"🔧 LOCAL FORMATTER: {recipe_name}")
     text = raw_text.strip()
     
-    if any(k in text for k in ["Bahan-bahan", "Cara Memasak", "Ingredients", "Instructions"]):
-        if not text.startswith("#"):
+    # Kalau teks sudah terlihat terstruktur (ada markdown headers), biarkan saja
+    if any(k in text for k in ["###", "Bahan-bahan", "Ingredients"]):
+         if not text.startswith("#"):
             return f"## {recipe_name}\n\n{text}"
-        return text
+         return text
     
     return parse_unstructured_text(text, recipe_name)
 
 def parse_unstructured_text(text: str, recipe_name: str) -> str:
+    # Memecah kalimat berdasarkan titik agar jadi list
     sentences = re.split(r'(?<=[.!?])\s+', text)
     ingredients = []
     steps = []
@@ -88,6 +86,7 @@ def parse_unstructured_text(text: str, recipe_name: str) -> str:
         s_strip = s.strip()
         if not s_strip: continue
         
+        # Deteksi bahan vs langkah secara sederhana
         if (_MEASURE_RE.search(s_strip) or re.match(r'^\d+(\.\d*)?\s*', s_strip)):
             ingredients.append(s_strip)
         elif any(k in s_strip.lower() for k in _INSTR_KEYWORDS):
@@ -96,14 +95,15 @@ def parse_unstructured_text(text: str, recipe_name: str) -> str:
             steps.append(s_strip)
     
     md = [f"## {recipe_name}\n"]
-    md.append("### 🛒 Bahan-bahan")
+    
+    md.append("### 🛒 Ingredients / Bahan")
     if ingredients:
         for ing in ingredients:
             md.append(f"- {ing}")
     else:
-        md.append("- (Lihat detail pada deskripsi)")
+        md.append("- (Check details in description)")
 
-    md.append("\n### 🍳 Cara Memasak")
+    md.append("\n### 🍳 Instructions / Cara Masak")
     if steps:
         for i, step in enumerate(steps, 1):
             md.append(f"{i}. {step}")
@@ -114,37 +114,42 @@ def parse_unstructured_text(text: str, recipe_name: str) -> str:
 
 
 # ==========================================
-#  AI FORMATTER (Gemini)
+#  AI FORMATTER (Gemini - IMPROVED)
 # ==========================================
-def format_with_gemini(raw_text: str, recipe_name: str) -> str:
+def format_with_gemini(raw_text: str, recipe_name: str, user_query: str) -> str:
+    """
+    Format resep menggunakan AI agar bahasanya sesuai user 
+    dan langkahnya dipecah jadi poin-poin.
+    """
     if not genai_available:
         return local_format_to_markdown(raw_text, recipe_name)
 
-    print(f"🔍 GEMINI Processing: {recipe_name}")
+    print(f"🔍 GEMINI Processing: {recipe_name} | Query Language Context: {user_query}")
     
+    # Bersihkan nama resep ganda
     cleaned_text = raw_text.strip()
     if cleaned_text.lower().startswith(recipe_name.lower()):
         cleaned_text = cleaned_text[len(recipe_name):].lstrip(".:- ").strip()
 
+    # --- PROMPT REKAYASA (KUNCI UTAMA) ---
     prompt = f"""
-Perbaiki format resep ini menjadi Markdown bahasa Indonesia.
-Judul: {recipe_name}
-
-Format output wajib:
-## {recipe_name}
-
-### 🛒 Bahan-bahan
-- (daftar bahan)
-
-### 🍳 Cara Memasak
-1. (langkah-langkah)
-
-### ℹ️ Nutrisi
-- (jika ada, kalau tidak tulis 'Tidak tersedia')
-
-Teks:
-{cleaned_text}
-"""
+    You are a professional chef assistant. 
+    User Question: "{user_query}"
+    
+    TASK:
+    1. DETECT the language of the User Question.
+    2. REWRITE the recipe below into that SAME language.
+    3. FORMAT strictly as Markdown.
+    
+    FORMATTING RULES:
+    - Title: ## {recipe_name}
+    - Ingredients: Use a bullet list (- Item).
+    - Instructions: BREAK DOWN paragraphs into short, numbered steps (1. Step one). Do NOT use long paragraphs.
+    - Nutrition: Use a bullet list (if available).
+    
+    SOURCE RECIPE:
+    {cleaned_text}
+    """
 
     tried_models = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
     
@@ -153,11 +158,12 @@ Teks:
             model = genai.GenerativeModel(model_name)
             response = model.generate_content(
                 prompt,
-                generation_config={"temperature": 0.2}
+                generation_config={"temperature": 0.3} # Sedikit kreatif biar bahasanya luwes
             )
             result_text = response.text.strip()
             
-            if "###" in result_text:
+            # Validasi hasil harus mengandung Markdown header
+            if "##" in result_text or "###" in result_text:
                 print(f"✅ GEMINI Success ({model_name})")
                 return result_text
         except Exception:
@@ -197,9 +203,10 @@ def search_recipes(query: str, top_k: int = 3):
             
             print(f"   [{i+1}] {recipe_name} ({score:.3f})")
 
-            # AI Format hanya untuk Top 1 (hemat waktu)
+            # AI Format hanya untuk Top 1
             if i == 0:
-                formatted_text = format_with_gemini(raw_text, recipe_name)
+                # KITA PASSING 'query' KE SINI AGAR AI TAU BAHASA USER
+                formatted_text = format_with_gemini(raw_text, recipe_name, query)
             else:
                 formatted_text = local_format_to_markdown(raw_text, recipe_name)
 

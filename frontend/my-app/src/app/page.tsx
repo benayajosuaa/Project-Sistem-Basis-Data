@@ -1,21 +1,37 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import NavigationBar from "@/components/navbar";
 import { Montserrat } from "next/font/google";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks"; // npm i remark-breaks
 import rehypeRaw from "rehype-raw";
 import { motion, AnimatePresence } from "framer-motion";
 
 const montserratFont = Montserrat({
   subsets: ["latin"],
-  weight: "400",
+  weight: ["400", "500", "600"],
 });
+
+/* -----------------------------
+   TYPES
+------------------------------ */
+type ResultItem = {
+  score?: number;
+  text?: string;
+  recipe_name?: string;
+  error?: string;
+};
+
+type ApiResponse = {
+  answer?: string;
+  results?: ResultItem[];
+};
 
 export default function Home() {
   const [value, setValue] = useState("");
-  const [response, setResponse] = useState<any>(null);
+  const [response, setResponse] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,34 +40,74 @@ export default function Home() {
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
-  // --- COMPONENT: RESULT CARD ---
-  function ResultCard({ r }: { r: any }) {
+  /* -----------------------------
+     HELPER: MARKDOWN RENDERER
+  ------------------------------ */
+  const MarkdownRenderer = ({ content }: { content: string }) => (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkBreaks]}
+      rehypePlugins={[rehypeRaw]}
+      components={{
+        ul: ({ ...props }) => <ul className="list-disc list-outside ml-5 my-3 space-y-1 text-gray-700" {...props} />,
+        ol: ({ ...props }) => <ol className="list-decimal list-outside ml-5 my-3 space-y-2 text-gray-700" {...props} />,
+        li: ({ ...props }) => <li className="pl-1 leading-relaxed" {...props} />,
+        h1: ({ ...props }) => <h1 className="text-2xl font-bold mt-6 mb-4 text-gray-900" {...props} />,
+        h2: ({ ...props }) => <h2 className="text-xl font-bold mt-5 mb-3 text-gray-800 border-b pb-2" {...props} />,
+        h3: ({ ...props }) => <h3 className="text-lg font-semibold mt-4 mb-2 text-gray-800" {...props} />,
+        p: ({ ...props }) => <p className="my-3 leading-7 text-gray-700" {...props} />,
+        strong: ({ ...props }) => <strong className="font-semibold text-gray-900" {...props} />,
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
+
+  /* -----------------------------
+     NORMALIZE MARKDOWN
+  ------------------------------ */
+  const normalizeMarkdown = (md?: string) => {
+    if (!md) return "";
+    // Memastikan baris baru dihormati
+    return md.replace(/\\n/g, "\n").trim();
+  };
+
+  /* -----------------------------
+     RESULT CARD
+  ------------------------------ */
+  function ResultCard({ r }: { r: ResultItem }) {
     const [open, setOpen] = useState(false);
     const [copied, setCopied] = useState(false);
 
     const handleCopy = async () => {
-      await navigator.clipboard.writeText(r.text || "");
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      try {
+        await navigator.clipboard.writeText(r.text || "");
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      } catch {
+        setCopied(false);
+      }
     };
 
     return (
-      <div className="border rounded-lg p-4 bg-white shadow-sm mt-4">
+      <div className="border border-gray-200 rounded-lg p-5 bg-white shadow-sm mt-4 hover:shadow-md transition-shadow">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-lg font-semibold">{r.recipe_name}</h3>
-            <p className="text-xs text-gray-500">Score: {r.score?.toFixed(3)}</p>
+            <h3 className="text-lg font-semibold text-gray-800">{r.recipe_name || "Tanpa nama"}</h3>
+            <p className="text-xs text-gray-500 mt-1">
+              Sumber: dataset (Score: {typeof r.score === "number" ? r.score.toFixed(2) : "—"})
+            </p>
           </div>
 
           <div className="flex gap-3">
-            <button 
-              className="text-xs text-indigo-600 font-medium hover:underline" 
-              onClick={() => setOpen(!open)}
-            >
-              {open ? "Tutup" : "Baca Detail"}
-            </button>
             <button
-              className="text-xs border px-2 py-1 rounded hover:bg-gray-50 transition"
+              className="text-xs text-indigo-600 font-medium hover:underline"
+              onClick={() => setOpen((s) => !s)}
+            >
+              {open ? "Tutup" : "Baca Sumber"}
+            </button>
+
+            <button
+              className="text-xs border px-3 py-1 rounded hover:bg-gray-50 transition"
               onClick={handleCopy}
             >
               {copied ? "✓ Disalin" : "Salin"}
@@ -60,25 +116,20 @@ export default function Home() {
         </div>
 
         {open && (
-          <div className="mt-3 pt-3 border-t border-gray-100">
-            <div className="prose prose-sm prose-slate max-w-none 
-                          prose-headings:font-semibold prose-headings:text-gray-800
-                          prose-h3:text-base prose-h3:mt-4 prose-h3:mb-2
-                          prose-p:my-2 prose-p:text-gray-700
-                          prose-ul:my-2 prose-ul:ml-4
-                          prose-ol:my-2 prose-ol:ml-4
-                          prose-li:my-1">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                {r.text}
-              </ReactMarkdown>
+          <motion.div 
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            className="mt-4 pt-4 border-t border-gray-100"
+          >
+            <div className="text-sm">
+              <MarkdownRenderer content={normalizeMarkdown(r.text || "")} />
             </div>
-          </div>
+          </motion.div>
         )}
       </div>
     );
   }
 
-  // Auto expand textarea
   useEffect(() => {
     const el = inputRef.current;
     if (!el) return;
@@ -86,14 +137,13 @@ export default function Home() {
     el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
   }, [value]);
 
-  // Auto scroll to top when new response
   useEffect(() => {
-    if (outputRef.current && (response || loading)) {
-      outputRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    if (outputRef.current && !loading && response) {
+      window.scrollTo({ top: 100, behavior: 'smooth' });
     }
   }, [loading, response]);
 
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async () => {
     if (!value.trim() || loading) return;
 
     setLoading(true);
@@ -101,7 +151,6 @@ export default function Home() {
     setResponse(null);
 
     try {
-      console.log("🚀 FRONTEND - Sending request:", value);
       const res = await fetch(`${API_URL}/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -109,134 +158,125 @@ export default function Home() {
       });
 
       if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
+        const text = await res.text();
+        throw new Error(`Server error: ${res.status} ${text}`);
       }
 
-      const data = await res.json();
-      console.log("📦 FRONTEND - Received response:", data);
+      const data: ApiResponse = await res.json();
 
       if (data.results?.[0]?.error) {
         setError(data.results[0].error);
-      } else {
-        setResponse(data);
+        return;
       }
+
+      const safe: ApiResponse = {
+        answer: normalizeMarkdown(data.answer),
+        results: data.results?.map((r) => ({
+          ...r,
+          text: normalizeMarkdown(r.text),
+        })),
+      };
+
+      setResponse(safe);
     } catch (err: any) {
-      console.error("❌ FRONTEND - Fetch error:", err);
-      setError(err?.message || "Error saat mengambil data dari server.");
+      setError(err?.message || "Error mengambil data.");
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
-    }
-  };
+  }, [API_URL, value, loading]);
 
   return (
-    <div className={`bg-white min-h-screen ${montserratFont.className}`}>
+    <div className={`bg-white min-h-screen ${montserratFont.className} text-gray-800`}>
       <NavigationBar />
 
-      {/* Main Container */}
-      <main className="pt-24 pb-32 px-4 md:px-8 lg:px-40">
-        <div
-          ref={outputRef}
-          className="p-4 min-h-[200px] max-h-[calc(100vh-200px)] overflow-y-auto space-y-8"
-        >
+      <main className="pt-24 pb-40 px-6 md:px-20 lg:px-40 max-w-5xl mx-auto">
+        <div ref={outputRef} className="p-4 min-h-[200px] space-y-8">
+
+          {/* LOADING */}
           {loading ? (
-            <div className="flex flex-col items-center justify-center space-y-4 py-10 opacity-60">
-              <div className="w-8 h-8 border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
-              <p className="text-gray-600">Sedang meracik resep...</p>
+            <div className="flex flex-col items-center justify-center space-y-4 py-20 opacity-60">
+              <div className="w-10 h-10 border-4 border-gray-200 border-t-blue-600 rounded-full animate-spin"></div>
+              <p className="font-medium text-gray-500">Sedang meracik resep...</p>
             </div>
-          ) : error ? (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="p-4 bg-red-50 text-red-600 rounded-lg border border-red-100"
-            >
-              <strong>Error:</strong> {error}
-            </motion.div>
-          ) : response ? (
+          ) : null}
+
+          {/* ERROR */}
+          {error ? (
+            <div className="p-4 bg-red-50 text-red-600 rounded-lg border border-red-100 flex items-center gap-2">
+              <span>⚠️</span> {error}
+            </div>
+          ) : null}
+
+          {/* HAS RESPONSE */}
+          {!loading && !error && response ? (
             <AnimatePresence>
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
+                transition={{ duration: 0.4 }}
               >
-                {/* 1. MAIN ANSWER (Proper Markdown Styling) */}
-                <div className="bg-white rounded-2xl">
-                  <div className="prose prose-slate prose-lg max-w-none
-                                prose-headings:font-bold prose-headings:text-gray-900
-                                prose-h2:text-2xl prose-h2:mt-6 prose-h2:mb-4 prose-h2:border-b prose-h2:pb-2 prose-h2:border-gray-200
-                                prose-h3:text-xl prose-h3:mt-5 prose-h3:mb-3 prose-h3:text-gray-800
-                                prose-p:text-gray-700 prose-p:leading-relaxed prose-p:my-3
-                                prose-ul:my-3 prose-ul:ml-6 prose-ul:space-y-2
-                                prose-ol:my-3 prose-ol:ml-6 prose-ol:space-y-2
-                                prose-li:text-gray-700 prose-li:leading-relaxed
-                                prose-strong:text-gray-900 prose-strong:font-semibold
-                                prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-sm
-                                prose-pre:bg-gray-900 prose-pre:text-gray-100">
-                    <ReactMarkdown 
-                      remarkPlugins={[remarkGfm]} 
-                      rehypePlugins={[rehypeRaw]}
-                    >
-                      {response.answer}
-                    </ReactMarkdown>
-                  </div>
+                <div className="bg-white">
+                  <MarkdownRenderer content={response.answer || ""} />
                 </div>
 
-                <hr className="my-8 border-gray-200" />
+                <hr className="my-10 border-gray-100" />
 
-                {/* 2. REFERENCE LIST */}
-                {response.results && response.results.length > 1 && (
-                  <div className="space-y-4">
-                    <h4 className="font-semibold text-gray-400 text-sm uppercase tracking-wider mb-4">
-                      Referensi Lainnya
-                    </h4>
-                    {response.results.slice(1).map((r: any, i: number) => (
-                      <ResultCard key={i} r={r} />
-                    ))}
-                  </div>
-                )}
+                <div className="space-y-4">
+                  <h4 className="font-semibold text-gray-400 text-xs uppercase tracking-widest mb-6">
+                    Referensi Dataset
+                  </h4>
 
+                  {response.results?.map((r, i) => (
+                    <ResultCard key={i} r={r} />
+                  ))}
+                </div>
               </motion.div>
             </AnimatePresence>
-          ) : (
-            <div className="text-center text-gray-400 py-20">
-              <p className="text-xl font-light">Ketik bahan atau nama resep untuk memulai...</p>
-              <p className="text-sm mt-2">Contoh: "apple pie", "roti gandum", "kue coklat"</p>
+          ) : null}
+
+          {/* EMPTY STATE */}
+          {!loading && !error && !response ? (
+            <div className="text-center text-gray-300 py-32 select-none">
+              <p className="text-6xl mb-4 grayscale opacity-50">👨‍🍳</p>
+              <p className="text-xl font-light">Ketik bahan atau nama kue untuk memulai...</p>
             </div>
-          )}
+          ) : null}
         </div>
       </main>
 
-      {/* Input Area */}
-      <div className="fixed bottom-0 w-full bg-white/95 backdrop-blur-sm pb-8 pt-4 px-4 md:px-8 lg:px-40 border-t border-gray-100">
-        <div className="relative">
+      {/* INPUT BAR */}
+      <div className="fixed bottom-0 w-full bg-white/90 backdrop-blur-md pb-8 pt-6 px-8 md:px-40 border-t border-gray-100 z-50">
+        <div className="relative max-w-4xl mx-auto">
           <textarea
             ref={inputRef}
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Apa yang ingin Anda cari hari ini? (contoh: resep apple pie, kue coklat, dll)"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void handleSubmit();
+              }
+            }}
+            placeholder="Apa yang ingin Anda cari hari ini?"
             disabled={loading}
-            className="w-full p-4 border border-gray-300 rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/50 shadow-sm pr-12 disabled:bg-gray-50 disabled:cursor-not-allowed"
+            className="w-full p-4 pl-6 border border-gray-200 rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-lg shadow-gray-100 pr-14 text-gray-700 placeholder:text-gray-400"
             rows={1}
+            style={{ minHeight: "60px" }}
           />
-          
-          <button 
-            onClick={handleSubmit}
+
+          <button
+            onClick={() => void handleSubmit()}
             disabled={loading || !value.trim()}
-            className="absolute right-3 top-3 p-2 bg-blue-100 hover:bg-blue-200 rounded-xl text-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="absolute right-3 top-3 p-2.5 bg-gray-100 hover:bg-blue-600 hover:text-white rounded-xl text-gray-500 transition-all disabled:opacity-50 disabled:hover:bg-gray-100 disabled:hover:text-gray-500"
           >
-            {loading ? "⏳" : "➤"}
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+            </svg>
           </button>
         </div>
-        
-        <p className="text-center text-xs text-gray-400 mt-2">
-          ⚠️ Hasil berdasarkan data resep yang tersedia di database
+
+        <p className="text-center text-[10px] text-gray-400 mt-3">
+          ⚠️ Jawaban hanya berdasarkan data dataset.
         </p>
       </div>
     </div>
