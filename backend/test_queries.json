@@ -1,0 +1,32 @@
+[
+  {
+    "query": "How to make Apple Pie?",
+    "expected_recipe": "Apple Pie by Grandma Ople",
+    "ground_truth": "To make Apple Pie: Peel and core apples, then thinly slice. Melt butter in a saucepan, add flour to form a paste, add sugars and water, bring to a boil. Place sliced apples in pie crust, create lattice top, pour sugar-butter mixture over, and bake at 425°F for 15 minutes, then 350°F for 35-45 minutes.",
+    "key_ingredients": ["apples", "butter", "flour", "sugar", "pastry"]
+  },
+  {
+    "query": "Resep Applesauce sederhana",
+    "expected_recipe": "Sarah's Homemade Applesauce",
+    "ground_truth": "Untuk membuat Applesauce: Kombinasikan apel, air, gula, dan kayu manis dalam panci. Tutup dan masak dengan api sedang sampai apel lunak, sekitar 15-20 menit. Dinginkan lalu hancurkan dengan garpu atau potato masher hingga tekstur yang diinginkan.",
+    "key_ingredients": ["apples", "water", "sugar", "cinnamon"]
+  },
+  {
+    "query": "What is the recipe for Apple-Cranberry Crostada?",
+    "expected_recipe": "Apple-Cranberry Crostada",
+    "ground_truth": "Heat butter in skillet, add apples, sugar and cranberries, cook until liquid released. Continue cooking until apples fall apart and juices thicken. Spread on puff pastry sheet, fold borders, brush with egg white, sprinkle sugar, and bake at 400°F for 25-30 minutes.",
+    "key_ingredients": ["butter", "apples", "cranberries", "sugar", "puff pastry"]
+  },
+  {
+    "query": "Chicken recipe with vegetables",
+    "expected_recipe": "Slow Cooker Chicken Tagine",
+    "ground_truth": "Layer chicken thighs, onions, carrots, raisins, and apricots in slow cooker. Whisk chicken broth, tomato paste, lemon juice, spices together and pour over chicken. Cook on High 4.5 hours or Low 7.5 hours. Serve over couscous.",
+    "key_ingredients": ["chicken thighs", "onions", "carrots", "chicken broth", "couscous"]
+  },
+  {
+    "query": "Kue Pie buah apa yang enak?",
+    "expected_recipe": "Apple Pie by Grandma Ople",
+    "ground_truth": "Apple Pie adalah pilihan terbaik. Dibuat dengan apel yang diiris tipis, butter, tepung, gula, dan pastry crust dengan lattice pattern di atasnya.",
+    "key_ingredients": ["apples", "butter", "flour", "sugar", "pastry"]
+  }
+]

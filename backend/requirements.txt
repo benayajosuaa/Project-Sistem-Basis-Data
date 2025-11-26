@@ -6,5 +6,11 @@ python-dotenv
 numpy
 google-generativeai
 
+# Evaluation frameworks
+ragas
+datasets
+langchain
+langchain-google-genai
+
 # Optional improvements for ingredient extraction
 spacy
