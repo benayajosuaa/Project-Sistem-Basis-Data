@@ -1,0 +1,151 @@
+[
+  {
+    "timestamp": "2025-11-27T00:42:32.554645",
+    "total_queries": 8,
+    "test_cases": [
+      {
+        "query": "Apple Pie by Grandma Ople",
+        "expected_recipe": "Apple Pie by Grandma Ople",
+        "retrieved_recipe": "Apple Pie by Grandma Ople",
+        "recipe_match": true,
+        "retrieval_score": 0.5462,
+        "score_quality": "Good",
+        "ingredient_f1": 0.122,
+        "response_time": 6.9383,
+        "extracted_ingredients": [
+          "Peel",
+          "core apples",
+          "Melt butter",
+          "a saucepan",
+          "flour"
+        ],
+        "status": "success"
+      },
+      {
+        "query": "No-Bake Chocolate Coconut Cookies",
+        "expected_recipe": "No-Bake Chocolate Coconut Cookies",
+        "retrieved_recipe": "No-Bake Chocolate Coconut Cookies",
+        "recipe_match": true,
+        "retrieval_score": 0.659,
+        "score_quality": "Good",
+        "ingredient_f1": 0.2174,
+        "response_time": 0.3827,
+        "extracted_ingredients": [
+          "a baking sheet",
+          "waxed paper",
+          "coconut",
+          "a large bowl",
+          "sugar"
+        ],
+        "status": "success"
+      },
+      {
+        "query": "Old Fashioned Cocktail",
+        "expected_recipe": "Old Fashioned",
+        "retrieved_recipe": "Old Fashioned Cocktail",
+        "recipe_match": true,
+        "retrieval_score": 0.5602,
+        "score_quality": "Good",
+        "ingredient_f1": 0.2051,
+        "response_time": 0.2133,
+        "extracted_ingredients": [
+          "Muddle sugar cube",
+          "water",
+          "bitters",
+          "an old fashioned glass",
+          "whiskey"
+        ],
+        "status": "success"
+      },
+      {
+        "query": "Resep kue coklat",
+        "status": "no_results",
+        "response_time": 0.03483390808105469
+      },
+      {
+        "query": "Cara membuat pizza",
+        "expected_recipe": null,
+        "retrieved_recipe": "PHILADELPHIA® Fruit Pizza",
+        "recipe_match": true,
+        "retrieval_score": 0.4816,
+        "score_quality": "Fair",
+        "ingredient_f1": 0.0851,
+        "response_time": 0.1669,
+        "extracted_ingredients": [
+          "foil",
+          "prepared pan",
+          "crust",
+          "Invert",
+          "plate"
+        ],
+        "status": "success"
+      },
+      {
+        "query": "chicken pasta recipe",
+        "expected_recipe": null,
+        "retrieved_recipe": "Lemon Chicken Orzo Soup",
+        "recipe_match": true,
+        "retrieval_score": 0.5785,
+        "score_quality": "Good",
+        "ingredient_f1": 0.0882,
+        "response_time": 0.3926,
+        "extracted_ingredients": [
+          "Lemon Chicken Orzo Soup",
+          "a large pot",
+          "lightly salted water",
+          "a boil",
+          "orzo"
+        ],
+        "status": "success"
+      },
+      {
+        "query": "cookies tanpa telur",
+        "expected_recipe": null,
+        "retrieved_recipe": "Sugar-Free Date Cookies",
+        "recipe_match": true,
+        "retrieval_score": 0.3765,
+        "score_quality": "Fair",
+        "ingredient_f1": 0.0968,
+        "response_time": 0.2269,
+        "extracted_ingredients": [
+          "a baking sheet",
+          "parchment paper",
+          "the dates",
+          "pecans",
+          "water"
+        ],
+        "status": "success"
+      },
+      {
+        "query": "chocolate cake",
+        "expected_recipe": null,
+        "retrieved_recipe": "German Chocolate Cake Frosting",
+        "recipe_match": true,
+        "retrieval_score": 0.5192,
+        "score_quality": "Good",
+        "ingredient_f1": 0.1395,
+        "response_time": 0.321,
+        "extracted_ingredients": [
+          "milk",
+          "brown sugar",
+          "butter",
+          "egg yolks",
+          "vanilla"
+        ],
+        "status": "success"
+      }
+    ],
+    "metrics": {
+      "avg_retrieval_score": 0.5316,
+      "avg_ingredient_f1": 0.1363,
+      "avg_response_time": 1.2345,
+      "recipe_match_rate": 1.0,
+      "score_distribution": {
+        "excellent": 0,
+        "good": 5,
+        "fair": 2,
+        "poor": 0
+      }
+    }
+  }
+]
