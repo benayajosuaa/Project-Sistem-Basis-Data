@@ -272,9 +272,11 @@ export default function Home() {
 
   return (
     <div className={`bg-white min-h-screen ${montserratFont.className} text-gray-800`}>
-      <NavigationBar />
+      <div className="fixed z-10 w-full ">
+        <NavigationBar />
+      </div>
 
-      <main className="pt-24 pb-40 px-6 md:px-20 lg:px-40 max-w-5xl mx-auto">
+      <main className="z-0 relative pt-24 pb-40 px-6 md:px-20 lg:px-40 max-w-5xl mx-auto">
         <div ref={outputRef} className="p-4 min-h-[200px] space-y-8">
 
           {/* LOADING */}
