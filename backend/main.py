@@ -29,6 +29,10 @@ class AskPayload(BaseModel):
 def root():
     return {"message": "RAG Recipe API is running!"}
 
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "service": "recipe-rag-backend"}
+
 @app.post("/ask")
 async def ask(payload: AskPayload):
     q = payload.question.strip()
