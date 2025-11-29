@@ -1,6 +1,7 @@
+version: "3.8"
 services:
   qdrant:
-    image: qdrant/qdrant
+    image: qdrant/qdrant:latest
     container_name: qdrant
     ports:
       - "6333:6333"
@@ -9,16 +10,18 @@ services:
     restart: unless-stopped
 
   backend:
-    build: ./backend
+    build:
+      context: ./backend
     container_name: backend
     ports:
       - "8000:8000"
+    env_file:
+      - ./backend/.env
     environment:
+      # when running in container, backend should reach qdrant as service name
       - QDRANT_URL=http://qdrant:6333
-      - QDRANT_COLLECTION=recipes
-      - EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2
     depends_on:
       - qdrant
     volumes:
-      - ./backend/data:/app/data
+      - ./backend:/app   # dev mount so edits reflect immediately
     restart: unless-stopped
