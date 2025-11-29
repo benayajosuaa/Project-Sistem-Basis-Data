@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Evaluation & Testing
+evaluation_results.json
+test_queries.json
+scan_update_preview.json
+
+# Data files (tidak perlu di production)
+data/
+qdrant_data/
+
+# Python cache
+*.pyc
+.pytest_cache/
+
+# OS
+.DS_Store
+Thumbs.db
